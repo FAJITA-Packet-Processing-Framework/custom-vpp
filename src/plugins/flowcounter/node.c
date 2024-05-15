@@ -114,6 +114,9 @@ VLIB_NODE_FN (flowcounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 {
   u32 n_left_from, *from, *to_next;
   flowcounter_next_t next_index;
+  u32 thread_index = vm->thread_index;
+  clib_bihash_16_8_t hash_table = flowcounter_main.per_cpu[thread_index].hash_table;
+
   u32 pkts_swapped = 0;
   u32 pkts_inserted = 0;
 
@@ -126,6 +129,140 @@ VLIB_NODE_FN (flowcounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
       u32 n_left_to_next;
 
       vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
+
+	  clib_bihash_kv_16_8_t key0, key1, key2, key3, key4, key5;
+	  u64 hash0, hash1, hash2, hash3, hash4, hash5;
+
+
+	  if (n_left_from >= 8 && n_left_to_next >= 2) {
+		vlib_buffer_t *p0, *p1, *p2, *p3;
+		ethernet_header_t *en0, *en1, *en2, *en3;
+
+		p0 = vlib_get_buffer (vm, from[0]);
+		p1 = vlib_get_buffer (vm, from[1]);
+		p2 = vlib_get_buffer (vm, from[2]);
+		p3 = vlib_get_buffer (vm, from[3]);
+
+		en0 = vlib_buffer_get_current (p0);
+		en1 = vlib_buffer_get_current (p1);
+		en2 = vlib_buffer_get_current (p2);
+		en3 = vlib_buffer_get_current (p3);
+
+		key0 = get_hash_key((ip4_header_t *) (en0 + 1));
+		key1 = get_hash_key((ip4_header_t *) (en1 + 1));
+		key2 = get_hash_key((ip4_header_t *) (en2 + 1));
+		key3 = get_hash_key((ip4_header_t *) (en3 + 1));
+
+		hash0 = clib_bihash_hash_16_8(&key0);
+		hash1 = clib_bihash_hash_16_8(&key1);
+		hash2 = clib_bihash_hash_16_8(&key2);
+		hash3 = clib_bihash_hash_16_8(&key3);
+
+	  }
+	  
+	  while (n_left_from >= 8 && n_left_to_next >= 2){
+		u32 next0 = FLOWCOUNTER_NEXT_INTERFACE_OUTPUT;
+	  	u32 next1 = FLOWCOUNTER_NEXT_INTERFACE_OUTPUT;
+	  	u32 sw_if_index0, sw_if_index1;
+
+	  	u32 bi0, bi1;
+	  	vlib_buffer_t *b0, *b1;
+		
+
+		/* Prefetch 6th and 7th vlib buffers. */
+	  	{
+	    	vlib_buffer_t *p6, *p7;
+
+		    p6 = vlib_get_buffer (vm, from[6]);
+		    p7 = vlib_get_buffer (vm, from[7]);
+
+	    	vlib_prefetch_buffer_header (p6, LOAD);
+	    	vlib_prefetch_buffer_header (p7, LOAD);
+
+		    clib_prefetch_store (p6->data);
+		    clib_prefetch_store (p7->data);
+	  	}
+
+		/* record keys and hashes, plus prefetch buckets. */
+		{
+			vlib_buffer_t *p4, *p5;
+			ethernet_header_t *en4, *en5;
+
+		    p4 = vlib_get_buffer (vm, from[4]);
+		    p5 = vlib_get_buffer (vm, from[5]);
+
+			en4 = vlib_buffer_get_current (p4);
+			en5 = vlib_buffer_get_current (p5);
+
+			key4 = get_hash_key((ip4_header_t *) (en4 + 1));
+			key5 = get_hash_key((ip4_header_t *) (en5 + 1));
+
+			hash4 = clib_bihash_hash_16_8(&key4);
+			hash5 = clib_bihash_hash_16_8(&key5);
+
+			clib_bihash_prefetch_bucket_16_8(&hash_table, hash4);
+			clib_bihash_prefetch_bucket_16_8(&hash_table, hash5);
+
+		}
+
+		/* prefetch data. */
+		{
+			clib_bihash_prefetch_data_16_8(&hash_table, hash2);
+			clib_bihash_prefetch_data_16_8(&hash_table, hash3);
+		}
+
+		to_next[0] = bi0 = from[0];
+		to_next[1] = bi1 = from[1];
+	  	from += 2;
+	  	to_next += 2;
+	  	n_left_from -= 2;
+	  	n_left_to_next -= 2;
+	  	
+		b0 = vlib_get_buffer (vm, bi0);
+	  	b1 = vlib_get_buffer (vm, bi1);
+
+		clib_bihash_kv_16_8_t value0, value1;
+
+		if (clib_bihash_search_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, &key0, &value0) < 0) {
+			key0.value = 1;
+			pkts_inserted += 1;
+		}
+		else
+			key0.value = value0.value + 1;
+		
+		clib_bihash_add_del_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key0, 1);
+
+		if (clib_bihash_search_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, &key1, &value1) < 0) {
+			key1.value = 1;
+			pkts_inserted += 1;
+		}
+		else
+			key1.value = value1.value + 1;
+		
+		clib_bihash_add_del_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key1, 1);
+
+		/* shift stored keys and hashes by 2 on every iteration */
+		key0 = key2;
+		key1 = key3;
+		key2 = key4;
+		key3 = key5;
+		hash0 = hash2;
+		hash1 = hash3;
+		hash2 = hash4;
+		hash3 = hash5;
+
+
+    	sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
+    	sw_if_index1 = vnet_buffer (b1)->sw_if_index[VLIB_RX];
+
+	    /* Send pkt back out the RX interface */
+	  	vnet_buffer (b0)->sw_if_index[VLIB_TX] = sw_if_index0;
+	  	vnet_buffer (b1)->sw_if_index[VLIB_TX] = sw_if_index1;
+
+		vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
+					   to_next, n_left_to_next,
+					   bi0, bi1, next0, next1);
+	  }
 
       while (n_left_from > 0 && n_left_to_next > 0)
 	  {
@@ -169,7 +306,7 @@ VLIB_NODE_FN (flowcounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 		clib_bihash_kv_16_8_t value;
 
 		flowcounter_main_t * fcm = &flowcounter_main;
-		if (clib_bihash_search_16_8 (&fcm->per_cpu->hash_table, &key, &value) < 0) {
+		if (clib_bihash_search_16_8 (&fcm->per_cpu[thread_index].hash_table, &key, &value) < 0) {
 			key.value = 1;
 			pkts_inserted += 1;
 		}
@@ -177,7 +314,7 @@ VLIB_NODE_FN (flowcounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 			key.value = value.value + 1;
 		}
 		
-		clib_bihash_add_del_16_8(&fcm->per_cpu->hash_table, &key, 1);
+		clib_bihash_add_del_16_8(&fcm->per_cpu[thread_index].hash_table, &key, 1);
 
     	sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 
