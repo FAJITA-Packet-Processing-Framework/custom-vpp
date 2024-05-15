@@ -158,26 +158,28 @@ static clib_error_t * flowcounter_init (vlib_main_t * vm)
   /* Add our API messages to the global name_crc hash table */
   sm->msg_id_base = setup_message_id_table ();
 
-/* Create per CPU hash tables!
+  /* Create per CPU hash tables! */
   sm->per_cpu = 0;
   vlib_thread_main_t *tm = vlib_get_thread_main ();
   vec_validate(sm->per_cpu, tm->n_vlib_mains - 1);
 
+/*
   struct rte_hash_parameters hash_params = {0};
   hash_params.key_len = sizeof(u32);
   hash_params.hash_func_init_val = 0;
   hash_params.extra_flag = 0;
   hash_params.entries = 1024;
   hash_params.hash_func = ipv4_hash_crc;
-
+*/
+  
   for (int i=0; i < tm->n_vlib_mains; i++) {
     char* name = (char *) format(0, "flowcounter_%d", i);
     clib_bihash_init_16_8(&sm->per_cpu[i].hash_table, 
-                            name, 1024, 1 << 20);
+                            name, 8388608, 1 << 30);
 //    hash_params.name = (char *) format(0, "flowcounter_%d", i);
 //    sm->per_cpu[i].sticky_ht = rte_hash_create(&hash_params); 
   }
-*/
+
   return 0;
 }
 

@@ -23,12 +23,26 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 
+#include <vppinfra/bihash_16_8.h>
+
+typedef struct {
+  /**
+   * Each CPU has its own sticky flow hash table.
+   * One single table is used for all VIPs.
+   */
+  clib_bihash_16_8_t hash_table;
+} fc_per_cpu_t;
+
 typedef struct {
     /* API message ID base */
     u16 msg_id_base;
 
     /* convenience */
     vnet_main_t * vnet_main;
+
+    /* Some global data is per-cpu */
+    fc_per_cpu_t *per_cpu;
+
 } flowcounter_main_t;
 
 extern flowcounter_main_t flowcounter_main;
