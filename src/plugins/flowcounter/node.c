@@ -223,23 +223,23 @@ VLIB_NODE_FN (flowcounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 		clib_bihash_kv_16_8_t value0, value1;
 
-		if (clib_bihash_search_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, &key0, &value0) < 0) {
+		if (clib_bihash_search_inline_with_hash_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, hash0, &value0) < 0) {
 			key0.value = 1;
 			pkts_inserted += 1;
 		}
 		else
 			key0.value = value0.value + 1;
 		
-		clib_bihash_add_del_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key0, 1);
+		clib_bihash_add_del_with_hash_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key0, hash0, 1);
 
-		if (clib_bihash_search_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, &key1, &value1) < 0) {
+		if (clib_bihash_search_inline_with_hash_16_8 (&flowcounter_main.per_cpu[thread_index].hash_table, hash1, &value1) < 0) {
 			key1.value = 1;
 			pkts_inserted += 1;
 		}
 		else
 			key1.value = value1.value + 1;
 		
-		clib_bihash_add_del_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key1, 1);
+		clib_bihash_add_del_with_hash_16_8(&flowcounter_main.per_cpu[thread_index].hash_table, &key1, hash1, 1);
 
 		/* shift stored keys and hashes by 2 on every iteration */
 		key0 = key2;
@@ -372,7 +372,7 @@ VLIB_REGISTER_NODE (flowcounter_node) =
 
   /* edit / add dispositions here */
   .next_nodes = {
-    [FLOWCOUNTER_NEXT_INTERFACE_OUTPUT] = "interface-output",
+    [FLOWCOUNTER_NEXT_INTERFACE_OUTPUT] = "sample",
   },
 };
 /* *INDENT-ON* */

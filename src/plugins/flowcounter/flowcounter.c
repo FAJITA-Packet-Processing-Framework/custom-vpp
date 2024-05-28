@@ -175,7 +175,7 @@ static clib_error_t * flowcounter_init (vlib_main_t * vm)
   for (int i=0; i < tm->n_vlib_mains; i++) {
     char* name = (char *) format(0, "flowcounter_%d", i);
     clib_bihash_init_16_8(&sm->per_cpu[i].hash_table, 
-                            name, 8388608, 1 << 30);
+                            name, 2097152, 1 << 30);
 //    hash_params.name = (char *) format(0, "flowcounter_%d", i);
 //    sm->per_cpu[i].sticky_ht = rte_hash_create(&hash_params); 
   }
@@ -192,5 +192,5 @@ VNET_FEATURE_INIT (flowcounter, static) =
 {
   .arc_name = "device-input",
   .node_name = "flowcounter",
-  .runs_before = VNET_FEATURES ("ethernet-input"),
+  .runs_before = VNET_FEATURES ("sample"),
 };
