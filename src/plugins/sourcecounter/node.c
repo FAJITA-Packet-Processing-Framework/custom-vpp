@@ -91,6 +91,11 @@ get_hash_key(ip4_header_t *ip4){
 	return key;
 }
 
+static_always_inline void hash_callback(clib_bihash_kv_16_8_t *key, void *arg){
+	clib_bihash_kv_16_8_t *my_kv = (clib_bihash_kv_16_8_t *)arg;
+	my_kv->value = key->value + 1;
+}
+
 
 /*
  * Simple dual/single loop version, default version which will compile
@@ -131,7 +136,7 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
       vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
 
 	  clib_bihash_kv_16_8_t key0, key1, key2, key3, key4, key5;
-	  u64 hash0, hash1, hash2, hash3, hash4, hash5;
+	  u64 hash2, hash3, hash4, hash5;
 
 
 	  if (n_left_from >= 8 && n_left_to_next >= 2) {
@@ -153,8 +158,6 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 		key2 = get_hash_key((ip4_header_t *) (en2 + 1));
 		key3 = get_hash_key((ip4_header_t *) (en3 + 1));
 
-		hash0 = clib_bihash_hash_16_8(&key0);
-		hash1 = clib_bihash_hash_16_8(&key1);
 		hash2 = clib_bihash_hash_16_8(&key2);
 		hash3 = clib_bihash_hash_16_8(&key3);
 
@@ -221,37 +224,16 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 		b0 = vlib_get_buffer (vm, bi0);
 	  	b1 = vlib_get_buffer (vm, bi1);
 
-		clib_bihash_kv_16_8_t value0, value1;
-
-		clib_spinlock_lock (&sourcecounter_main.writer_lock);
-
-		if (clib_bihash_search_inline_with_hash_16_8 (&sourcecounter_main.per_cpu[thread_index].hash_table, hash0, &value0) < 0) {
-			key0.value = 1;
-			pkts_inserted += 1;
-		}
-		else
-			key0.value = value0.value + 1;
-		
-		clib_bihash_add_del_with_hash_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key0, hash0, 1);
-
-		if (clib_bihash_search_inline_with_hash_16_8 (&sourcecounter_main.per_cpu[thread_index].hash_table, hash1, &value1) < 0) {
-			key1.value = 1;
-			pkts_inserted += 1;
-		}
-		else
-			key1.value = value1.value + 1;
-		
-		clib_bihash_add_del_with_hash_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key1, hash1, 1);
-
-		clib_spinlock_unlock (&sourcecounter_main.writer_lock);
+		key0.value = 1;
+		key1.value = 1;
+		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key0, hash_callback, &key0);
+		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key1, hash_callback, &key1);
 
 		/* shift stored keys and hashes by 2 on every iteration */
 		key0 = key2;
 		key1 = key3;
 		key2 = key4;
 		key3 = key5;
-		hash0 = hash2;
-		hash1 = hash3;
 		hash2 = hash4;
 		hash3 = hash5;
 
@@ -307,23 +289,11 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 
 		clib_bihash_kv_16_8_t key = get_hash_key(ip40);
-		clib_bihash_kv_16_8_t value;
 
 		sourcecounter_main_t * fcm = &sourcecounter_main;
-
-		clib_spinlock_lock (&sourcecounter_main.writer_lock);
-
-		if (clib_bihash_search_16_8 (&fcm->per_cpu[thread_index].hash_table, &key, &value) < 0) {
-			key.value = 1;
-			pkts_inserted += 1;
-		}
-		else {
-			key.value = value.value + 1;
-		}
 		
-		clib_bihash_add_del_16_8(&fcm->per_cpu[thread_index].hash_table, &key, 1);
-
-		clib_spinlock_unlock (&sourcecounter_main.writer_lock);
+		key.value = 1;
+		clib_bihash_add_with_overwrite_cb_16_8(&fcm->per_cpu[thread_index].hash_table, &key, hash_callback, &key);
 
     	sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 
