@@ -83,16 +83,20 @@ typedef enum
 static_always_inline clib_bihash_kv_16_8_t
 get_hash_key(ip4_header_t *ip4){
 	clib_bihash_kv_16_8_t key;
-	udp_header_t *udp = (udp_header_t *)(ip4 + 1);
 
-	key.key[0] = ( ((u64) ip4->src_address.as_u32) << 32) | (ip4->dst_address.as_u32);
-	key.key[1] = ( ((u32) udp->src_port) << 16) | udp->dst_port;
+	key.key[0] = (u64)(ip4->dst_address.as_u32);
+	key.key[1] = 0;
 
 	return key;
 }
 
 static_always_inline void hash_callback(clib_bihash_kv_16_8_t *key, void *arg){
 	clib_bihash_kv_16_8_t *my_kv = (clib_bihash_kv_16_8_t *)arg;
+	u64 maxValue = 0x7FFFFFFFFFFFFFFF;
+	if (my_kv->value >= maxValue){
+		my_kv->value = 0;
+	}
+
 	my_kv->value = key->value + 1;
 }
 
@@ -227,8 +231,8 @@ VLIB_NODE_FN (cpolicer_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 		key0.value = 1;
 		key1.value = 1;
-		clib_bihash_add_with_overwrite_cb_16_8(&cpolicer_main.per_cpu[thread_index].hash_table, &key0, hash_callback, &key0);
-		clib_bihash_add_with_overwrite_cb_16_8(&cpolicer_main.per_cpu[thread_index].hash_table, &key1, hash_callback, &key1);
+		clib_bihash_add_with_overwrite_cb_16_8(&cpolicer_main.per_cpu[0].hash_table, &key0, hash_callback, &key0);
+		clib_bihash_add_with_overwrite_cb_16_8(&cpolicer_main.per_cpu[0].hash_table, &key1, hash_callback, &key1);
 
 		/* shift stored keys and hashes by 2 on every iteration */
 		key0 = key2;

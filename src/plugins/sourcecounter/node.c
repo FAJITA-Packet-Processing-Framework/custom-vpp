@@ -83,17 +83,17 @@ typedef enum
 static_always_inline clib_bihash_kv_16_8_t
 get_hash_key(ip4_header_t *ip4){
 	clib_bihash_kv_16_8_t key;
-	udp_header_t *udp = (udp_header_t *)(ip4 + 1);
 
-	key.key[0] = ( ((u64) ip4->src_address.as_u32) << 32) | (ip4->dst_address.as_u32);
-	key.key[1] = ( ((u32) udp->src_port) << 16) | udp->dst_port;
+	key.key[0] = (((u64) ip4->src_address.as_u32) << 32);
+	key.key[1] = 0;
 
 	return key;
 }
 
 static_always_inline void hash_callback(clib_bihash_kv_16_8_t *key, void *arg){
+	// If we are here it means that the key already exists! So, simply return the existing value.
 	clib_bihash_kv_16_8_t *my_kv = (clib_bihash_kv_16_8_t *)arg;
-	my_kv->value = key->value + 1;
+	my_kv->value = key->value;
 }
 
 
@@ -224,10 +224,42 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 		b0 = vlib_get_buffer (vm, bi0);
 	  	b1 = vlib_get_buffer (vm, bi1);
 
-		key0.value = 1;
-		key1.value = 1;
-		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key0, hash_callback, &key0);
-		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[thread_index].hash_table, &key1, hash_callback, &key1);
+		sourcecounter_main_t * fcm = &sourcecounter_main;
+
+		clib_bihash_kv_16_8_t value0, value1;		
+
+		if (clib_bihash_search_16_8 (&fcm->per_cpu[thread_index].hash_table, &key0, &value0) < 0) {
+			clib_spinlock_lock (&sourcecounter_main.writer_lock);
+			fcm->count++;
+			key0.value = fcm->count;
+			clib_bihash_add_with_overwrite_cb_16_8(&fcm->per_cpu[thread_index].hash_table, &key0, hash_callback, &key0);
+			// It means that other thread has already added the key, so we need to decrement the count.
+			if (key0.value != fcm->count)
+				fcm->count--;
+			
+			value0.value = key0.value;
+			clib_spinlock_unlock (&sourcecounter_main.writer_lock);
+		}
+		if (clib_bihash_search_16_8 (&fcm->per_cpu[thread_index].hash_table, &key1, &value1) < 0) {
+			clib_spinlock_lock (&sourcecounter_main.writer_lock);
+			fcm->count++;
+			key1.value = fcm->count;
+			clib_bihash_add_with_overwrite_cb_16_8(&fcm->per_cpu[thread_index].hash_table, &key1, hash_callback, &key1);
+			// It means that other thread has already added the key, so we need to decrement the count.
+			if (key1.value != fcm->count)
+				fcm->count--;
+			
+			value1.value = key1.value;
+
+			clib_spinlock_unlock (&sourcecounter_main.writer_lock);
+		}
+
+
+		clib_atomic_fetch_add(&fcm->stats[value0.value],1);
+		clib_atomic_fetch_add(&fcm->stats[value1.value],1);
+
+		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[0].hash_table, &key0, hash_callback, &key0);
+		clib_bihash_add_with_overwrite_cb_16_8(&sourcecounter_main.per_cpu[0].hash_table, &key1, hash_callback, &key1);
 
 		/* shift stored keys and hashes by 2 on every iteration */
 		key0 = key2;
@@ -291,9 +323,23 @@ VLIB_NODE_FN (sourcecounter_node) (vlib_main_t * vm, vlib_node_runtime_t * node,
 		clib_bihash_kv_16_8_t key = get_hash_key(ip40);
 
 		sourcecounter_main_t * fcm = &sourcecounter_main;
-		
-		key.value = 1;
-		clib_bihash_add_with_overwrite_cb_16_8(&fcm->per_cpu[thread_index].hash_table, &key, hash_callback, &key);
+		clib_bihash_kv_16_8_t value;		
+
+		if (clib_bihash_search_16_8 (&fcm->per_cpu[thread_index].hash_table, &key, &value) < 0) {
+			clib_spinlock_lock (&sourcecounter_main.writer_lock);
+			fcm->count++;
+			key.value = fcm->count;
+			clib_bihash_add_with_overwrite_cb_16_8(&fcm->per_cpu[thread_index].hash_table, &key, hash_callback, &key);
+			// It means that other thread has already added the key, so we need to decrement the count.
+			if (key.value != fcm->count)
+				fcm->count--;
+			
+			value.value = key.value;
+
+			clib_spinlock_unlock (&sourcecounter_main.writer_lock);
+		}
+
+		clib_atomic_fetch_add(&fcm->stats[value.value],1);
 
     	sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 

@@ -171,6 +171,9 @@ static clib_error_t * sourcecounter_init (vlib_main_t * vm)
                             name, 4194304, 1 << 30);
 
   clib_spinlock_init (&sm->writer_lock);
+  sm->stats = calloc(20000000, sizeof(u64));
+  sm->count = 0;
+
   return 0;
 }
 

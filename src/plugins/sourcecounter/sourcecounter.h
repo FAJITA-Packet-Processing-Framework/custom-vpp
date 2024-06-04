@@ -44,6 +44,9 @@ typedef struct {
     fc_per_cpu_t *per_cpu;
 
     clib_spinlock_t writer_lock;
+    
+    u64 *stats;
+    u64 count;
 
 } sourcecounter_main_t;
 
